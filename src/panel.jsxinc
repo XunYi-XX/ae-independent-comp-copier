@@ -1,0 +1,75 @@
+function IICBuildPanel(owner) {
+    var win = owner instanceof Panel ? owner : new Window('palette', '独立合成复制器', undefined, {resizeable:true});
+    var source = null;
+    win.orientation = 'column'; win.alignChildren = ['fill', 'top']; win.spacing = 10; win.margins = 14;
+    var heading = win.add('statictext', undefined, '独立合成复制器  1.0');
+    heading.graphics.font = ScriptUI.newFont(heading.graphics.font.name, 'BOLD', 16);
+    var intro = win.add('statictext', undefined, '嵌套合成 · 独立表达式 · 独立换图', {multiline:true});
+    var sourceRow = win.add('group'); sourceRow.alignChildren = ['fill','center'];
+    var sourceLabel = sourceRow.add('edittext', undefined, '先选择一个合成', {readonly:true}); sourceLabel.alignment = ['fill','center'];
+    var read = sourceRow.add('button', undefined, '读取选中合成');
+    var nameRow = win.add('group'); nameRow.add('statictext', undefined, '新合成名称');
+    var name = nameRow.add('edittext', undefined, ''); name.alignment = ['fill','center']; name.characters = 26;
+    var countRow = win.add('group'); countRow.add('statictext', undefined, '复制数量');
+    var count = countRow.add('edittext', undefined, '1'); count.characters = 5;
+    countRow.add('statictext', undefined, '份（每份相互独立）');
+    var media = win.add('checkbox', undefined, '复制素材项目，替换图片不影响原合成'); media.value = true;
+    media.helpTip = '复制 AE 内的素材项目；磁盘原文件不另拷贝。修改磁盘原文件仍会影响所有引用。';
+    var actions = win.add('group'); actions.alignChildren = ['fill','center'];
+    var inspect = actions.add('button', undefined, '分析依赖'); inspect.alignment = ['fill','center'];
+    var duplicate = actions.add('button', undefined, '创建独立副本'); duplicate.alignment = ['fill','center'];
+    var status = win.add('statictext', undefined, '选中合成后，先分析或直接创建副本。', {multiline:true});
+    status.preferredSize.height = 34;
+    var log = win.add('edittext', undefined, '说明：原合成保持不变。静态 comp("名称") 与 footage("名称") 引用自动跟随副本；无法可靠处理的动态引用会列在这里。', {multiline:true, readonly:true, scrolling:true});
+    log.preferredSize = [440, 210]; log.alignment = ['fill','fill'];
+    var foot = win.add('statictext', undefined, '复制完成可 Ctrl+Z 撤销；工程请自行保存。', {multiline:true});
+    function choose(resetName) {
+        if (!app.project) throw Error('请先打开 AE 工程。');
+        var selected = app.project.selection, comps = [];
+        for (var i = 0; i < selected.length; i++) if (selected[i] instanceof CompItem) comps.push(selected[i]);
+        if (comps.length > 1) throw Error('请一次选中一个源合成；可用复制数量创建多份。');
+        var comp = comps.length ? comps[0] : app.project.activeItem;
+        if (!(comp instanceof CompItem)) throw Error('请在项目面板选中一个合成，或打开该合成。');
+        source = comp; sourceLabel.text = comp.name;
+        if (resetName || !name.text) name.text = comp.name + '_独立版';
+        status.text = '已选择：' + comp.name; return comp;
+    }
+    function getPlan() {
+        if (!source) choose();
+        // A closed/replaced project invalidates old CompItem objects.
+        try {var validId = source.id;} catch (_) {source = null; choose();}
+        var belongs = false;
+        for (var i = 1; i <= app.project.numItems; i++) if (app.project.item(i) === source) {belongs = true; break;}
+        if (!belongs) {source = null; choose();}
+        return IICEngine.analyze(app.project, source, {copyMedia:media.value});
+    }
+    function fail(error) {status.text = '操作未完成，查看下方原因。'; log.text = String(error);}
+    read.onClick = function () {try {choose(true); log.text = '来源已更新。点击“分析依赖”查看需要复制的合成和表达式。';} catch (error) {fail(error);}};
+    inspect.onClick = function () {
+        try {var plan = getPlan(); log.text = IICEngine.summary(plan); status.text = plan.issues.length ? '发现需要处理的引用，尚未复制。' : '分析通过，可以复制。';}
+        catch (error) {fail(error);}
+    };
+    duplicate.onClick = function () {
+        try {
+            var plan = getPlan(); log.text = IICEngine.summary(plan);
+            if (plan.issues.length) {status.text = '请先处理报告中的问题。'; return;}
+            if (!/^\s*\d+\s*$/.test(count.text)) throw Error('复制数量须为 1–20 的整数。');
+            read.enabled = inspect.enabled = duplicate.enabled = false;
+            var result = IICEngine.execute(plan, {name:name.text.replace(/^\s+|\s+$/g, ''), count:Number(count.text)}, function (message) {status.text = message; if (win instanceof Window) win.update();});
+            var lines = ['复制完成：'];
+            for (var i = 0; i < result.roots.length; i++) lines.push('• ' + result.roots[i].name);
+            lines.push('\n独立合成：' + (plan.comps.length * result.roots.length));
+            lines.push('独立素材项目：' + result.mediaCopied);
+            lines.push('重定向表达式：' + result.rewrites + '，已检查启用表达式：' + result.checkedExpressions);
+            if (result.warnings.length) lines.push('\n' + result.warnings.join('\n'));
+            lines.push('\n副本已在项目面板选中。原合成及外部时间线未替换，请按需使用副本。');
+            log.text = lines.join('\n'); status.text = '完成。副本可独立编辑。';
+        } catch (error) {fail(error);}
+        finally {read.enabled = inspect.enabled = duplicate.enabled = true;}
+    };
+    win.onResizing = win.onResize = function () {this.layout.resize();};
+    win.layout.layout(true); win.minimumSize = [360, 400];
+    if (win instanceof Window) {win.center(); win.show();}
+    return win;
+}
+IICBuildPanel(thisObj);
