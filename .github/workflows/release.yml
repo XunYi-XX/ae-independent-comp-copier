@@ -1,0 +1,41 @@
+name: Build Windows installer and release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-v1.0.0
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate expressions and panel callbacks
+        run: |
+          node tests/lex.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/panel.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build standalone Windows installer
+        run: python build.py --installer
+      - name: Validate release publisher without network side effects
+        run: python tests/test_release.py
+      - name: Test installer in an isolated temporary directory
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'installer-test.txt'
+          $setup = (Resolve-Path 'dist/AE-Independent-Comp-Copier-Setup-v1.0.0.exe').Path
+          $process = Start-Process -FilePath $setup -ArgumentList @('/self-test', $report) -PassThru -Wait
+          Get-Content -LiteralPath $report
+          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
+      - name: Publish release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/publish_release.py
