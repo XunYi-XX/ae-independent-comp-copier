@@ -1,0 +1,232 @@
+var IICEngine = (function () {
+    function key(id) {return '$' + id;}
+    function isComp(x) {return x instanceof CompItem;}
+    function isFootage(x) {return x instanceof FootageItem;}
+    function eachProperty(group, path, fn) {
+        for (var i = 1; i <= group.numProperties; i++) {
+            var prop = group.property(i), next = path.concat([i]);
+            if (prop.propertyType === PropertyType.PROPERTY) fn(prop, next);
+            else eachProperty(prop, next, fn);
+        }
+    }
+    function propertyAt(layer, path) {
+        var prop = layer;
+        for (var i = 0; i < path.length; i++) prop = prop.property(path[i]);
+        return prop;
+    }
+    function describe(comp, layer, prop) {return comp.name + ' / ' + layer.name + ' / ' + prop.name;}
+    function mediaProblem(item) {
+        if (item.hasProxy) return '包含代理素材，暂不自动重建代理';
+        if (item.mainSource instanceof SolidSource) return null;
+        if (!item.file || !item.file.exists) return '素材离线或为占位素材';
+        var path = item.file.name.toLowerCase();
+        if (/\.(psd|psb|ai|eps|pdf|swf|aep|aepx|glb|gltf|obj|c4d)$/.test(path)) return '分层 / 矢量 / 三维素材需手动处理，或取消“复制素材项目”';
+        if (!item.mainSource.isStill && /\.(png|jpe?g|tiff?|bmp|exr|dpx|tga|cin|hdr|webp)$/.test(path)) return '图像序列需保留序列导入范围，暂不自动重建';
+        return null;
+    }
+    function analyze(project, root, options) {
+        var plan = {project:project, root:root, comps:[], media:[], compMap:{}, mediaMap:{}, issues:[], expressionCount:0, referenceCount:0, options:options};
+        var compNames = {}, mediaNames = {}, queue = [], i;
+        if (!isComp(root)) {plan.issues.push('请先在项目面板选中一个合成，或打开需要复制的合成。'); return plan;}
+        for (i = 1; i <= project.numItems; i++) {
+            var item = project.item(i), table = isComp(item) ? compNames : (isFootage(item) ? mediaNames : null);
+            if (!table) continue;
+            var nameKey = key(item.name);
+            if (!table[nameKey]) table[nameKey] = [];
+            table[nameKey].push(item);
+        }
+        function addComp(comp) {
+            if (plan.compMap[key(comp.id)]) return;
+            var info = {item:comp, expressions:[]};
+            plan.compMap[key(comp.id)] = info; plan.comps.push(info); queue.push(info);
+        }
+        function addMedia(media) {
+            if (plan.mediaMap[key(media.id)]) return;
+            plan.mediaMap[key(media.id)] = media; plan.media.push(media);
+            if (options.copyMedia) {
+                var problem = mediaProblem(media);
+                if (problem) plan.issues.push(media.name + '：' + problem);
+            }
+        }
+        function resolve(ref, where) {
+            var table = ref.kind === 'comp' ? compNames : mediaNames, matches = table[key(ref.name)];
+            if (!matches || matches.length !== 1) {
+                plan.issues.push(where + '：' + ref.kind + '(' + IICLex.quote(ref.name) + ') ' +
+                    (!matches ? '目标不存在' : '存在重名项目，请先给项目取唯一名称'));
+                return;
+            }
+            ref.itemId = matches[0].id;
+            if (ref.kind === 'comp') addComp(matches[0]); else addMedia(matches[0]);
+        }
+        addComp(root);
+        for (var head = 0; head < queue.length; head++) {
+            var info = queue[head], comp = info.item;
+            for (i = 1; i <= comp.numLayers; i++) {
+                var layer = comp.layer(i);
+                if (layer instanceof AVLayer && layer.source) {
+                    if (isComp(layer.source)) addComp(layer.source);
+                    else if (isFootage(layer.source)) addMedia(layer.source);
+                }
+                try {
+                    if (layer.essentialProperty && layer.essentialProperty.numProperties > 0) {
+                        plan.issues.push(comp.name + ' / ' + layer.name + '：含基本属性 / 媒体替换覆盖，当前版本需手动处理');
+                    }
+                    eachProperty(layer, [], function (prop, path) {
+                        if (!prop.canSetExpression || !prop.expression) return;
+                        var expression = prop.expression, parsed = IICLex.scan(expression), where = describe(comp, layer, prop);
+                        var record = {layerIndex:layer.index, path:path, expression:expression,
+                            enabled:prop.expressionEnabled, refs:parsed.refs, where:where};
+                        info.expressions.push(record); plan.expressionCount++;
+                        for (var n = 0; n < parsed.issues.length; n++) plan.issues.push(where + '：' + parsed.issues[n]);
+                        for (var n = 0; n < parsed.refs.length; n++) {resolve(parsed.refs[n], where); plan.referenceCount++;}
+                        if (record.enabled && prop.expressionError) plan.issues.push(where + '：原表达式已有错误：' + prop.expressionError);
+                    });
+                } catch (error) {plan.issues.push(comp.name + ' / ' + layer.name + '：扫描失败 ' + String(error));}
+            }
+        }
+        return plan;
+    }
+    function fingerprint(layer) {
+        var a = [layer.name, layer.startTime, layer.inPoint, layer.outPoint, layer.stretch,
+            layer.enabled, layer.locked, layer.parent ? layer.parent.index : 0];
+        try {a.push(layer.trackMatteType); a.push(layer.trackMatteLayer ? layer.trackMatteLayer.index : 0);} catch (_) {}
+        return a.join('|');
+    }
+    function copySourceSetting(dst, src, name) {
+        var value = src[name];
+        if (value !== undefined && dst[name] !== value) dst[name] = value;
+    }
+    function duplicateMedia(project, src, folder, created, factory, name) {
+        var dst;
+        if (src.mainSource instanceof SolidSource) {
+            var layer = factory.layers.addSolid(src.mainSource.color, name, src.width, src.height, src.pixelAspect, Math.max(src.duration, 1));
+            dst = layer.source; created.push(dst); layer.remove();
+        } else {
+            var input = new ImportOptions(src.file); input.importAs = ImportAsType.FOOTAGE;
+            dst = project.importFile(input); created.push(dst);
+            var settings = ['alphaMode', 'premulColor', 'invertAlpha', 'fieldSeparationType', 'highQualityFieldSeparation', 'conformFrameRate', 'removePulldown', 'loop'];
+            for (var i = 0; i < settings.length; i++) {
+                var setting = settings[i];
+                if (src.mainSource.isStill && (setting === 'conformFrameRate' || setting === 'removePulldown' || setting === 'loop')) continue;
+                copySourceSetting(dst.mainSource, src.mainSource, setting);
+            }
+            copySourceSetting(dst, src, 'pixelAspect');
+            // Interpretation and media dimensions must stay consistent with the source layer.
+            if (dst.width !== src.width || dst.height !== src.height || dst.pixelAspect !== src.pixelAspect ||
+                (!src.mainSource.isStill && Math.abs(dst.duration - src.duration) > 0.0001)) {
+                throw Error('重新导入后素材解释发生变化：' + src.name);
+            }
+        }
+        dst.name = name; dst.parentFolder = folder; dst.label = src.label; dst.comment = src.comment;
+        return dst;
+    }
+    function execute(plan, config, progress) {
+        if (plan.issues.length) throw Error('请先解决分析报告中的问题，再执行复制。');
+        if (!config.name || !String(config.name).replace(/\s/g, '')) throw Error('请输入新合成名称。');
+        if (config.count < 1 || config.count > 20 || Math.floor(config.count) !== config.count) throw Error('复制数量须为 1–20 的整数。');
+        var p = plan.project, created = [], result = {roots:[], mapping:[], rewrites:0, checkedExpressions:0, mediaCopied:0, warnings:[]}, used = {}, initialSelection = [], group = false;
+        var originalCompIds = {}, originalMediaIds = {}, i, n;
+        for (i = 1; i <= p.numItems; i++) {var item = p.item(i); used[key(item.name)] = true; if (item.selected) initialSelection.push(item);}
+        for (i = 0; i < plan.comps.length; i++) originalCompIds[key(plan.comps[i].item.id)] = true;
+        for (i = 0; i < plan.media.length; i++) originalMediaIds[key(plan.media[i].id)] = true;
+        function addFolder(name, parent) {var f = p.items.addFolder(name); created.push(f); f.parentFolder = parent; return f;}
+        function notify(message) {if (progress) progress(message);}
+        try {
+            app.beginUndoGroup('独立合成复制器：深度复制'); group = true;
+            for (n = 0; n < config.count; n++) {
+                var rootName = IICLex.unique(config.name + (config.count > 1 ? '_' + (n + 1) : ''), used);
+                var folder = addFolder(rootName + '_独立内容', plan.root.parentFolder);
+                var compFolder = addFolder('嵌套合成', folder), mediaFolder = null, factory = null, copies = {}, mediaCopies = {};
+                if (plan.options.copyMedia && plan.media.length) {
+                    mediaFolder = addFolder('独立素材', folder);
+                    factory = p.items.addComp('__IIC_FACTORY__', 16, 16, 1, 1, 25); created.push(factory);
+                }
+                for (i = 0; i < plan.comps.length; i++) {
+                    var oldComp = plan.comps[i].item, newComp = oldComp.duplicate(); created.push(newComp);
+                    newComp.name = oldComp.id === plan.root.id ? rootName : IICLex.unique(rootName + '__' + oldComp.name, used);
+                    newComp.parentFolder = oldComp.id === plan.root.id ? folder : compFolder;
+                    copies[key(oldComp.id)] = newComp;
+                    result.mapping.push({kind:'comp', sourceId:oldComp.id, sourceName:oldComp.name, copyId:newComp.id, copyName:newComp.name});
+                    notify('正在复制 ' + newComp.name);
+                }
+                if (plan.options.copyMedia) {
+                    for (i = 0; i < plan.media.length; i++) {
+                        var oldMedia = plan.media[i], newMedia = duplicateMedia(p, oldMedia, mediaFolder, created, factory, IICLex.unique(rootName + '__' + oldMedia.name, used));
+                        mediaCopies[key(oldMedia.id)] = newMedia; result.mediaCopied++;
+                        result.mapping.push({kind:'footage', sourceId:oldMedia.id, sourceName:oldMedia.name, copyId:newMedia.id, copyName:newMedia.name});
+                    }
+                }
+                if (factory) {factory.remove(); factory = null;}
+                // Preserve all layer names: layer("name") expressions and third-party rigs stay stable.
+                for (i = 0; i < plan.comps.length; i++) {
+                    var src = plan.comps[i].item, dst = copies[key(src.id)];
+                    if (src.numLayers !== dst.numLayers) throw Error('合成图层数量发生变化：' + src.name);
+                    for (var j = 1; j <= src.numLayers; j++) {
+                        var sl = src.layer(j), dl = dst.layer(j), before = fingerprint(sl);
+                        if (sl instanceof AVLayer && sl.source) {
+                            var replacement = copies[key(sl.source.id)] || mediaCopies[key(sl.source.id)];
+                            if (replacement) {var locked = dl.locked; dl.locked = false; dl.replaceSource(replacement, false); dl.name = sl.name; dl.locked = locked;}
+                        }
+                        if (fingerprint(dl) !== before) throw Error('图层时序 / 父级 / 遮罩发生变化：' + src.name + ' / ' + sl.name);
+                    }
+                }
+                // Rewrite from the ORIGINAL text, avoiding AE's automatic duplicate-name substitutions.
+                for (i = 0; i < plan.comps.length; i++) {
+                    var info = plan.comps[i], dst = copies[key(info.item.id)];
+                    for (var j = 0; j < info.expressions.length; j++) {
+                        var record = info.expressions[j], layer = dst.layer(record.layerIndex), locked = layer.locked;
+                        var expression = IICLex.rewrite(record.expression, record.refs, function (ref) {
+                            var target = ref.kind === 'comp' ? copies[key(ref.itemId)] : mediaCopies[key(ref.itemId)];
+                            return target ? target.name : null;
+                        });
+                        layer.locked = false;
+                        var prop = propertyAt(layer, record.path);
+                        prop.expression = expression; prop.expressionEnabled = record.enabled;
+                        layer.locked = locked;
+                        if (expression !== record.expression) result.rewrites++;
+                    }
+                }
+                // Structural independence and actual expression evaluation are both required.
+                for (i = 0; i < plan.comps.length; i++) {
+                    var info = plan.comps[i], dst = copies[key(info.item.id)];
+                    for (var j = 1; j <= dst.numLayers; j++) {
+                        var layer = dst.layer(j);
+                        if (layer instanceof AVLayer && layer.source &&
+                            (originalCompIds[key(layer.source.id)] || (plan.options.copyMedia && originalMediaIds[key(layer.source.id)]))) throw Error('副本仍共用原项目：' + dst.name + ' / ' + layer.name);
+                    }
+                    for (var j = 0; j < info.expressions.length; j++) {
+                        var record = info.expressions[j], prop = propertyAt(dst.layer(record.layerIndex), record.path);
+                        if (!record.enabled) continue;
+                        var times = [0, Math.max(0, dst.duration / 2), Math.max(0, dst.duration - dst.frameDuration)];
+                        for (var t = 0; t < times.length; t++) {
+                            prop.valueAtTime(times[t], false);
+                            if (prop.expressionError) throw Error(record.where + '：副本表达式错误：' + prop.expressionError);
+                        }
+                        result.checkedExpressions++;
+                    }
+                }
+                result.roots.push(copies[key(plan.root.id)]);
+            }
+            for (i = 1; i <= p.numItems; i++) p.item(i).selected = false;
+            for (i = 0; i < result.roots.length; i++) result.roots[i].selected = true;
+            if (!plan.options.copyMedia && plan.media.length) result.warnings.push('素材项目保持共用；使用“替换素材”仍会影响原件。需要独立换图请勾选“复制素材项目”。');
+            app.endUndoGroup(); group = false;
+            return result;
+        } catch (error) {
+            var cleanupErrors = [];
+            for (i = created.length - 1; i >= 0; i--) {try {created[i].remove();} catch (cleanupError) {try {if (created[i].id) cleanupErrors.push(String(cleanupError));} catch (_) {}}}
+            for (i = 0; i < initialSelection.length; i++) {try {initialSelection[i].selected = true;} catch (_) {}}
+            if (group) app.endUndoGroup();
+            throw Error(String(error) + (cleanupErrors.length ? '\n部分临时项目未移除，请用撤销恢复：' + cleanupErrors.join('\n') : '\n本次创建的项目已回滚，原合成未改动。'));
+        }
+    }
+    function summary(plan) {
+        var lines = ['来源：' + (plan.root ? plan.root.name : '未选择'), '需复制合成：' + plan.comps.length,
+            '素材项目：' + plan.media.length + (plan.options.copyMedia ? '（独立复制）' : '（共用）'),
+            '表达式：' + plan.expressionCount + '，静态引用：' + plan.referenceCount];
+        if (plan.issues.length) lines.push('\n需先处理 ' + plan.issues.length + ' 项问题：\n' + plan.issues.join('\n'));
+        else lines.push('\n分析通过，可以创建独立副本。');
+        return lines.join('\n');
+    }
+    return {analyze:analyze, execute:execute, summary:summary};
+})();
