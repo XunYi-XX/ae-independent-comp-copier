@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "aeVersion": "2026 (26.2.1x2)",
+  "expressionCases": 24,
+  "aeAssertions": 24,
+  "nativePassed": true,
+  "panelCallbackTestsPassed": true,
+  "temporaryItemsCleaned": true,
+  "installedFileVerified": true,
+  "sha256": "f8211ce4b1dbb8863a3dc071ad4f95d8775207e035a285110c07f2eae1629f62",
+  "standaloneInstallerSelfTestsPassed": true,
+  "releasePublisherTestsPassed": true
+}
