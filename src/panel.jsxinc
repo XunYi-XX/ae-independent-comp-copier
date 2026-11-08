@@ -2,9 +2,9 @@ function IICBuildPanel(owner) {
     var win = owner instanceof Panel ? owner : new Window('palette', '独立合成复制器', undefined, {resizeable:true});
     var source = null;
     win.orientation = 'column'; win.alignChildren = ['fill', 'top']; win.spacing = 10; win.margins = 14;
-    var heading = win.add('statictext', undefined, '独立合成复制器  1.0');
+    var heading = win.add('statictext', undefined, '独立合成复制器  1.0.1');
     heading.graphics.font = ScriptUI.newFont(heading.graphics.font.name, 'BOLD', 16);
-    var intro = win.add('statictext', undefined, '嵌套合成 · 独立表达式 · 独立换图', {multiline:true});
+    var intro = win.add('statictext', undefined, '同目录复制 · 嵌套独立 · 素材默认共用', {multiline:true});
     var sourceRow = win.add('group'); sourceRow.alignChildren = ['fill','center'];
     var sourceLabel = sourceRow.add('edittext', undefined, '先选择一个合成', {readonly:true}); sourceLabel.alignment = ['fill','center'];
     var read = sourceRow.add('button', undefined, '读取选中合成');
@@ -13,14 +13,14 @@ function IICBuildPanel(owner) {
     var countRow = win.add('group'); countRow.add('statictext', undefined, '复制数量');
     var count = countRow.add('edittext', undefined, '1'); count.characters = 5;
     countRow.add('statictext', undefined, '份（每份相互独立）');
-    var media = win.add('checkbox', undefined, '复制素材项目，替换图片不影响原合成'); media.value = true;
-    media.helpTip = '复制 AE 内的素材项目；磁盘原文件不另拷贝。修改磁盘原文件仍会影响所有引用。';
+    var media = win.add('checkbox', undefined, '独立复制素材项目（可选）'); media.value = false;
+    media.helpTip = '默认沿用原素材项目。勾选后，可对副本执行“替换素材”；磁盘媒体文件仍共用。';
     var actions = win.add('group'); actions.alignChildren = ['fill','center'];
     var inspect = actions.add('button', undefined, '分析依赖'); inspect.alignment = ['fill','center'];
     var duplicate = actions.add('button', undefined, '创建独立副本'); duplicate.alignment = ['fill','center'];
     var status = win.add('statictext', undefined, '选中合成后，先分析或直接创建副本。', {multiline:true});
     status.preferredSize.height = 34;
-    var log = win.add('edittext', undefined, '说明：原合成保持不变。静态 comp("名称") 与 footage("名称") 引用自动跟随副本；无法可靠处理的动态引用会列在这里。', {multiline:true, readonly:true, scrolling:true});
+    var log = win.add('edittext', undefined, '副本放在对应原合成的目录。静态 comp("名称") 指向副本；footage("名称") 随素材复制选项处理。无法可靠处理的引用会在分析报告中列出。', {multiline:true, readonly:true, scrolling:true});
     log.preferredSize = [440, 210]; log.alignment = ['fill','fill'];
     var foot = win.add('statictext', undefined, '复制完成可 Ctrl+Z 撤销；工程请自行保存。', {multiline:true});
     function choose(resetName) {
@@ -62,7 +62,7 @@ function IICBuildPanel(owner) {
             lines.push('独立素材项目：' + result.mediaCopied);
             lines.push('重定向表达式：' + result.rewrites + '，已检查启用表达式：' + result.checkedExpressions);
             if (result.warnings.length) lines.push('\n' + result.warnings.join('\n'));
-            lines.push('\n副本已在项目面板选中。原合成及外部时间线未替换，请按需使用副本。');
+            lines.push('\n副本与对应原合成同目录，可按上面的名称查找。');
             log.text = lines.join('\n'); status.text = '完成。副本可独立编辑。';
         } catch (error) {fail(error);}
         finally {read.enabled = inspect.enabled = duplicate.enabled = true;}

@@ -1,4 +1,4 @@
-/* Run via a generated ASCII-path wrapper that sets IIC_TEST_ROOT / IIC_TEST_REPORT / IIC_TEST_IMAGE. */
+/* Run via a generated ASCII-path wrapper that sets IIC_TEST_ROOT / IIC_TEST_REPORT / IIC_TEST_IMAGE / IIC_TEST_VIDEO. */
 (function () {
     $.evalFile(new File(IIC_TEST_ROOT + '/src/lex.js'));
     $.evalFile(new File(IIC_TEST_ROOT + '/src/engine.jsxinc'));
@@ -18,12 +18,14 @@
     function evaluate(prop) {var value = prop.valueAtTime(1, false); if (prop.expressionError) throw Error(prop.expressionError); return value;}
     try {
         app.beginUndoGroup('独立合成复制器：临时测试夹具'); openedGroup = true;
-        var folder = p.items.addFolder(stamp), ctrl = addComp(stamp + '_控制"器', folder), child = addComp(stamp + '_子合成', folder), root = addComp(stamp + '_来源', folder);
+        var folder = p.items.addFolder(stamp), dependencyFolder = folder.items.addFolder('Dependencies');
+        var ctrl = addComp(stamp + '_控制"器', dependencyFolder), child = addComp(stamp + '_子合成', dependencyFolder), root = addComp(stamp + '_来源', folder);
         var ctrlNull = ctrl.layers.addNull(); ctrlNull.name = 'CTRL';
         var amount = ctrlNull.property('ADBE Effect Parade').addProperty('ADBE Slider Control'); amount.name = 'Amount'; amount.property(1).setValue(25);
         var text = child.layers.addText('ORIGINAL'); text.name = '文字';
         text.property('ADBE Transform Group').property('ADBE Position').expression = '[thisComp.width/2, thisComp.height/2]';
         var input = p.importFile(new ImportOptions(new File(IIC_TEST_IMAGE))); input.parentFolder = folder; input.name = stamp + '_image.png';
+        child.layers.add(input).name = 'Nested photo';
         var movie = p.importFile(new ImportOptions(new File(IIC_TEST_VIDEO))); movie.parentFolder = folder; movie.name = stamp + '_clip.mp4';
         movie.mainSource.conformFrameRate = 12.5; movie.mainSource.loop = 2;
         var movieLayer = root.layers.add(movie); movieLayer.name = 'Video';
@@ -49,6 +51,8 @@
         assert(report.roots.length === 2, 'Two independent copies created');
         assert(report.roots[0].name === stamp + '_副本_1_2', 'Existing composition name collision avoided');
         var root1 = report.roots[0], root2 = report.roots[1], ctrl1 = findCopy(report,ctrl,0), ctrl2 = findCopy(report,ctrl,1), child1 = findCopy(report,child,0), child2 = findCopy(report,child,1);
+        assert(root1.parentFolder === root.parentFolder && root2.parentFolder === root.parentFolder, 'Main copies stay beside the original');
+        assert(child1.parentFolder === child.parentFolder && ctrl1.parentFolder === ctrl.parentFolder, 'Nested and expression-only copies stay beside their respective originals');
         assert(root1.layer('A').source === root1.layer('B').source && root1.layer('A').source !== child, 'Repeated nested source copied once per copy');
         assert(root1.layer('A').source !== root2.layer('A').source, 'Different copies do not share nested compositions');
         assert(root1.layer('A').startTime === a.startTime && root1.layer('A').inPoint === a.inPoint && root1.layer('A').outPoint === a.outPoint && root1.layer('A').stretch === a.stretch, 'Layer timing and stretch preserved');
@@ -70,8 +74,14 @@
         assert(input.file !== null && media2.file !== null, 'Replacing copied footage leaves original and sibling untouched');
         assert(opacity.expression === originalExpr, 'Original expression text remains unchanged');
         var sharedPlan = IICEngine.analyze(p,root,{copyMedia:false});
+        root.selected = true;
+        var countBeforeShared = p.numItems, selectionBeforeShared = p.selection;
         var shared = IICEngine.execute(sharedPlan,{name:stamp+'_共享素材',count:1});
-        assert(shared.roots[0].layer('Photo').source === input && shared.warnings.length === 1 && shared.roots[0].layer('A').source !== child, 'Optional shared-media mode keeps independent compositions and reports scope');
+        var sharedRoot = shared.roots[0], sharedChild = sharedRoot.layer('A').source;
+        assert(sharedRoot.layer('Photo').source === input && sharedChild.layer('Nested photo').source === input && sharedChild !== child, 'Default shared mode reuses original photos even inside independent nested compositions');
+        assert(shared.mediaCopied === 0 && p.numItems === countBeforeShared + sharedPlan.comps.length, 'Default shared mode adds only compositions, with no footage or folders');
+        assert(sharedRoot.layer('Local parent').property('ADBE Transform Group').property('ADBE Rotate Z').expression === rotation.expression, 'footage() retains its original reference in shared mode');
+        assert(!sharedRoot.selected && p.selection.length === selectionBeforeShared.length && root.selected, 'Copies do not replace the existing project-panel selection');
         var dynamic = addComp(stamp+'_动态',folder); var dynLayer = dynamic.layers.addNull(); dynLayer.property('ADBE Transform Group').property('ADBE Opacity').expression = 'var name='+IICLex.quote(ctrl.name)+'; comp(name).width;';
         assert(IICEngine.analyze(p,dynamic,{copyMedia:true}).issues.length > 0, 'Dynamic references are blocked before duplication');
         var duplicateName = addComp(ctrl.name,folder);

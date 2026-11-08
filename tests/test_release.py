@@ -15,7 +15,7 @@ class PublisherTest(unittest.TestCase):
     def test_publish_resume_and_refuse_replacement(self):
         with tempfile.TemporaryDirectory() as folder:
             dist = Path(folder)
-            names = ['AE-Independent-Comp-Copier-Setup-v1.0.0.exe', 'AE-Independent-Comp-Copier-v1.0.0-Windows.zip', 'Independent Comp Copier.jsx', 'SHA256SUMS.txt']
+            names = ['AE-Independent-Comp-Copier-Setup-v1.0.1.exe', 'AE-Independent-Comp-Copier-v1.0.1-Windows.zip', 'Independent Comp Copier.jsx', 'SHA256SUMS.txt']
             for name in names:
                 (dist/name).write_bytes(name.encode())
             state = {'release':None, 'assets':[], 'uploads':0}
@@ -27,7 +27,8 @@ class PublisherTest(unittest.TestCase):
                     return state['release']
                 if method == 'POST' and endpoint.endswith('/releases'):
                     self.assertEqual(data['target_commitish'], 'commit-sha')
-                    state['release'] = {'id':1, 'upload_url':'https://uploads.test/assets{?name}', 'html_url':'https://github.test/release/v1.0.0'}
+                    self.assertEqual(data['tag_name'], 'v1.0.1')
+                    state['release'] = {'id':1, 'upload_url':'https://uploads.test/assets{?name}', 'html_url':'https://github.test/release/v1.0.1'}
                     return state['release']
                 if method == 'GET' and '/assets?' in endpoint:
                     return state['assets']

@@ -124,27 +124,38 @@ var IICEngine = (function () {
         if (plan.issues.length) throw Error('请先解决分析报告中的问题，再执行复制。');
         if (!config.name || !String(config.name).replace(/\s/g, '')) throw Error('请输入新合成名称。');
         if (config.count < 1 || config.count > 20 || Math.floor(config.count) !== config.count) throw Error('复制数量须为 1–20 的整数。');
-        var p = plan.project, created = [], result = {roots:[], mapping:[], rewrites:0, checkedExpressions:0, mediaCopied:0, warnings:[]}, used = {}, initialSelection = [], group = false;
+        var p = plan.project, created = [], result = {roots:[], mapping:[], rewrites:0, checkedExpressions:0, mediaCopied:0, warnings:[]}, used = {}, group = false;
+        var initialSelection = p.selection, selectedIds = {};
         var originalCompIds = {}, originalMediaIds = {}, i, n;
-        for (i = 1; i <= p.numItems; i++) {var item = p.item(i); used[key(item.name)] = true; if (item.selected) initialSelection.push(item);}
+        for (i = 1; i <= p.numItems; i++) used[key(p.item(i).name)] = true;
+        for (i = 0; i < initialSelection.length; i++) selectedIds[key(initialSelection[i].id)] = true;
         for (i = 0; i < plan.comps.length; i++) originalCompIds[key(plan.comps[i].item.id)] = true;
         for (i = 0; i < plan.media.length; i++) originalMediaIds[key(plan.media[i].id)] = true;
         function addFolder(name, parent) {var f = p.items.addFolder(name); created.push(f); f.parentFolder = parent; return f;}
         function notify(message) {if (progress) progress(message);}
+        function restoreSelection() {
+            var selected = p.selection;
+            for (var i = 0; i < selected.length; i++) {
+                if (!selectedIds[key(selected[i].id)]) selected[i].selected = false;
+            }
+            for (var i = 0; i < initialSelection.length; i++) {
+                if (!initialSelection[i].selected) initialSelection[i].selected = true;
+            }
+        }
         try {
             app.beginUndoGroup('独立合成复制器：深度复制'); group = true;
             for (n = 0; n < config.count; n++) {
                 var rootName = IICLex.unique(config.name + (config.count > 1 ? '_' + (n + 1) : ''), used);
-                var folder = addFolder(rootName + '_独立内容', plan.root.parentFolder);
-                var compFolder = addFolder('嵌套合成', folder), mediaFolder = null, factory = null, copies = {}, mediaCopies = {};
+                var mediaFolder = null, factory = null, copies = {}, mediaCopies = {};
                 if (plan.options.copyMedia && plan.media.length) {
-                    mediaFolder = addFolder('独立素材', folder);
+                    mediaFolder = addFolder(IICLex.unique(rootName + '_独立素材', used), plan.root.parentFolder);
                     factory = p.items.addComp('__IIC_FACTORY__', 16, 16, 1, 1, 25); created.push(factory);
                 }
                 for (i = 0; i < plan.comps.length; i++) {
                     var oldComp = plan.comps[i].item, newComp = oldComp.duplicate(); created.push(newComp);
                     newComp.name = oldComp.id === plan.root.id ? rootName : IICLex.unique(rootName + '__' + oldComp.name, used);
-                    newComp.parentFolder = oldComp.id === plan.root.id ? folder : compFolder;
+                    // Avoid moving or revealing copies when AE has already placed them beside their sources.
+                    if (newComp.parentFolder.id !== oldComp.parentFolder.id) newComp.parentFolder = oldComp.parentFolder;
                     copies[key(oldComp.id)] = newComp;
                     result.mapping.push({kind:'comp', sourceId:oldComp.id, sourceName:oldComp.name, copyId:newComp.id, copyName:newComp.name});
                     notify('正在复制 ' + newComp.name);
@@ -207,15 +218,14 @@ var IICEngine = (function () {
                 }
                 result.roots.push(copies[key(plan.root.id)]);
             }
-            for (i = 1; i <= p.numItems; i++) p.item(i).selected = false;
-            for (i = 0; i < result.roots.length; i++) result.roots[i].selected = true;
-            if (!plan.options.copyMedia && plan.media.length) result.warnings.push('素材项目保持共用；使用“替换素材”仍会影响原件。需要独立换图请勾选“复制素材项目”。');
+            restoreSelection();
+            if (!plan.options.copyMedia && plan.media.length) result.warnings.push('素材沿用原项目。仅换某一副本的图层时，请替换该图层的来源；项目面板的“替换素材”会影响所有引用。');
             app.endUndoGroup(); group = false;
             return result;
         } catch (error) {
             var cleanupErrors = [];
             for (i = created.length - 1; i >= 0; i--) {try {created[i].remove();} catch (cleanupError) {try {if (created[i].id) cleanupErrors.push(String(cleanupError));} catch (_) {}}}
-            for (i = 0; i < initialSelection.length; i++) {try {initialSelection[i].selected = true;} catch (_) {}}
+            try {restoreSelection();} catch (_) {}
             if (group) app.endUndoGroup();
             throw Error(String(error) + (cleanupErrors.length ? '\n部分临时项目未移除，请用撤销恢复：' + cleanupErrors.join('\n') : '\n本次创建的项目已回滚，原合成未改动。'));
         }

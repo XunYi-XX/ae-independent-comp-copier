@@ -13,8 +13,8 @@ using Microsoft.Win32;
 [assembly: AssemblyDescription("Install or uninstall the Independent Comp Copier ScriptUI panel")]
 [assembly: AssemblyCompany("XunYi-XX")]
 [assembly: AssemblyProduct("AE Independent Comp Copier")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyFileVersion("1.0.1.0")]
 
 internal static class PanelInstaller
 {
@@ -221,7 +221,7 @@ internal sealed class InstallerForm : Form
         layout.RowCount = 7;
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); layout.RowStyles.Add(new RowStyle(SizeType.Percent,100)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-        Label title = new Label(); title.Text = "独立合成复制器  1.0.0"; title.Font = new Font(Font.FontFamily, 18F, FontStyle.Bold); title.AutoSize = true; title.Dock = DockStyle.Fill;
+        Label title = new Label(); title.Text = "独立合成复制器  1.0.1"; title.Font = new Font(Font.FontFamily, 18F, FontStyle.Bold); title.AutoSize = true; title.Dock = DockStyle.Fill;
         layout.Controls.Add(title,0,0); layout.SetColumnSpan(title,3);
         Label description = new Label(); description.Text = "复制嵌套合成、重定向表达式，可独立修改文字、控制器和图片。\r\n插件已内置在本安装包中，无需下载其他文件。"; description.Dock = DockStyle.Fill; description.AutoSize = true;
         layout.Controls.Add(description,0,1); layout.SetColumnSpan(description,3);

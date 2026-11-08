@@ -9,7 +9,7 @@ import urllib.request
 
 
 def publish(api, repo, sha, dist):
-    tag = 'v1.0.0'
+    tag = 'v1.0.1'
     prefix = '/repos/' + repo
     try:
         release = api('GET', prefix + '/releases/tags/' + tag)
@@ -18,15 +18,15 @@ def publish(api, repo, sha, dist):
             raise
         release = api('POST', prefix + '/releases', {
             'tag_name': tag, 'target_commitish': sha,
-            'name': 'AE 独立合成复制器 v1.0.0',
+            'name': 'AE 独立合成复制器 ' + tag,
             'body': '独立 Windows 安装包：自动检测 AE，内置插件文件，支持安装、更新、旧版本备份和卸载。\n\n'
                     '下载 Setup EXE 后双击安装，或下载 Windows ZIP 获取安装包、JSX 和说明。安装不会关闭 AE。\n\n'
-                    '验证：24 项表达式测试、停靠面板回调测试、24 项 AE 原生断言，以及独立安装程序的安装 / 备份 / 卸载测试。\n\n'
-                    '表达式静态 comp()/footage() 引用自动独立；不确定的动态引用会定位并停止。支持范围详见 README。',
+                    '副本与对应原合成同目录，默认复用原素材项目。复制完成后保留项目面板的选择。\n\n'
+                    '嵌套合成和静态 comp() 引用独立；footage() 引用随素材选项处理。支持范围详见 README。',
             'draft': False, 'prerelease': False,
         })
     existing = {asset['name']: asset for asset in api('GET', prefix + '/releases/' + str(release['id']) + '/assets?per_page=100')}
-    names = ['AE-Independent-Comp-Copier-Setup-v1.0.0.exe', 'AE-Independent-Comp-Copier-v1.0.0-Windows.zip',
+    names = ['AE-Independent-Comp-Copier-Setup-' + tag + '.exe', 'AE-Independent-Comp-Copier-' + tag + '-Windows.zip',
              'Independent Comp Copier.jsx', 'SHA256SUMS.txt']
     for name in names:
         data = (dist / name).read_bytes()

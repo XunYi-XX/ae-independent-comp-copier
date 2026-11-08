@@ -7,7 +7,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-v1.0.0
+  group: release-v1.0.1
   cancel-in-progress: false
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
       - name: Test installer in an isolated temporary directory
         run: |
           $report = Join-Path $env:RUNNER_TEMP 'installer-test.txt'
-          $setup = (Resolve-Path 'dist/AE-Independent-Comp-Copier-Setup-v1.0.0.exe').Path
+          $setup = (Resolve-Path 'dist/AE-Independent-Comp-Copier-Setup-v1.0.1.exe').Path
           $process = Start-Process -FilePath $setup -ArgumentList @('/self-test', $report) -PassThru -Wait
           Get-Content -LiteralPath $report
           if ($process.ExitCode -ne 0) { exit $process.ExitCode }
