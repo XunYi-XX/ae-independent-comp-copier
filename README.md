@@ -1,4 +1,8 @@
-# AE 独立合成复制器 1.0.1
+# AE 独立合成复制器 / Independent Comp Copier 1.0.1
+
+[中文](#中文说明) · [English](#english) · [更新日志 / Changelog](CHANGELOG.md)
+
+## 中文说明
 
 复制已有合成、嵌套合成及表达式引用的控制合成。每个副本和对应原合成同目录，以名称区分。中文 ScriptUI 面板支持一次创建 1–20 份，默认沿用原素材项目。
 
@@ -58,3 +62,54 @@ v1.0.0 的历史验证见 `validation.json`。v1.0.1 的测试覆盖同目录复
 API 参考：[Adobe 脚本说明](https://helpx.adobe.com/after-effects/desktop/automate-in-after-effects/automate-animation/scripts.html)、[AE Scripting Guide](https://ae-scripting.docsforadobe.dev/)。
 
 发布流程可在 GitHub Actions 中手动运行“Build Windows installer and release”，从当前提交构建 v1.0.1，并上传独立 EXE、Windows ZIP、JSX 和 SHA-256 校验值。流程拒绝覆盖内容不同的已发布文件。
+
+## English
+
+Independent Comp Copier is a Chinese-language ScriptUI panel for After Effects. It duplicates a composition, its nested compositions, and control compositions referenced by expressions. Copies sit beside their respective originals and are distinguished by name. You can create 1–20 independent copies in one operation. They reuse the original footage items by default.
+
+### Install and open
+
+On Windows, run **AE-Independent-Comp-Copier-Setup-v1.0.1.exe**, choose the detected After Effects installation, and select Install / Update. The installer contains the JSX and uses Windows .NET Framework 4.x. You can browse to `AfterFX.exe` manually. Run the installer as administrator if the AE installation folder is protected.
+
+Reinstalling identical files skips the write. An upgrade backs up the previous panel with a `.backup-<timestamp>` suffix. The uninstaller removes only a panel matching its embedded version and preserves projects, media and backups. Installation and removal leave AE running.
+
+For manual installation, copy `dist/Independent Comp Copier.jsx` to the AE `Support Files/Scripts/ScriptUI Panels` folder. Restart AE and open **Independent Comp Copier.jsx** from **Window** to dock the panel. To open a floating panel immediately, use **File → Scripts → Run Script File**.
+
+### Use the panel
+
+1. Select a source composition in the Project panel, then click **读取选中合成** (Read Selected Comp). You can also read the currently open comp.
+2. Enter a name and number of copies. Enable **独立复制素材项目（可选）** (Duplicate Footage Items) if you need independent project-level footage replacement.
+3. Click **分析依赖** (Analyze Dependencies) to inspect compositions, footage, expressions and issues.
+4. Click **创建独立副本** (Create Independent Copies). Main, nested and control comps appear beside their respective originals. The panel lists the new main comp names and preserves the original Project panel selection. The default mode adds only compositions.
+
+The operation is one undo step. Save the project in AE when ready. The panel works locally and needs no changes to scripting or networking preferences.
+
+### What is independent
+
+- Each copy has independent nested comps, text, cameras, controls, effects, keyframes, parenting and matte relationships.
+- Static `comp("name")` calls point to the copied comps, including controllers referenced only by expressions. Static `footage("name")` calls follow the footage setting. The scanner supports single and double quotes and Unicode escapes, and preserves comments, ordinary strings and regular expressions.
+- Layer names and indices are preserved, so local references such as `thisComp.layer("name")` continue to work inside each copy.
+- With shared footage, replace the source of the specific layer to change only that copy. **Replace Footage** in the Project panel affects every reference to the same footage item.
+- Independent footage mode creates separate AE footage items and solids in a per-copy folder. The media files on disk are shared. Overwriting a media file affects every item that uses it.
+- A nested comp used more than once within a single copy is duplicated once for that copy. Separate copies have their own nested comps.
+
+### Limits
+
+The panel stops and identifies the composition, layer and property when a reference cannot be rewritten safely. This includes dynamic `comp(variable)` calls, concatenated names, indirect calls, `eval` or `Function`, template literals, duplicate target names, Essential Properties and media replacement overrides. Give targets unique names and use fixed literal references before analyzing again.
+
+Independent footage mode cannot rebuild image sequences, proxies, offline items, placeholders, layered PSD or AI footage, or 3D assets. Prepare those separately or use shared footage mode.
+
+The panel validates references, timing, parenting and mattes, and evaluates enabled expressions at the start, middle and end of each comp. Review name-dependent expressions, external paths and third-party effects in the copied comp. A failed operation removes the items created by that operation.
+
+### Build and verify
+
+- `python build.py` builds the single-file JSX and ZIP.
+- `python build.py --installer` uses the Windows .NET Framework C# compiler to build the bundled EXE and Windows ZIP.
+- `AE-Independent-Comp-Copier-Setup-v1.0.1.exe /self-test C:/work/installer-test.txt` checks installation, idempotency, backups, removal and file protection in a temporary directory.
+- `node tests/lex.test.cjs` checks expression parsing, rewriting, escaping and duplicate names.
+- `node tests/panel.test.cjs` checks docked panel callbacks, naming, copy count and the read/analyze controls.
+- `tests/ae-smoke.jsx` uses temporary AE fixtures to check nested comps, expressions, footage isolation, multiple copies, text changes and rollback. It cleans up its fixtures and restores the selection.
+
+`validation.json` records native AE 2026 validation for v1.0.0. The v1.0.1 tests cover sibling placement, selection preservation, reuse of photos in nested comps and batch rollback. Try a duplicate project first when using a different AE version.
+
+The **Build Windows installer and release** GitHub Actions workflow builds and uploads the EXE, Windows ZIP, JSX and SHA-256 checksums. It refuses to overwrite published files with different contents. [Adobe scripting documentation](https://helpx.adobe.com/after-effects/desktop/automate-in-after-effects/automate-animation/scripts.html) · [AE Scripting Guide](https://ae-scripting.docsforadobe.dev/)
